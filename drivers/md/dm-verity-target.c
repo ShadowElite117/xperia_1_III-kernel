@@ -494,10 +494,10 @@ static int verity_verify_io(struct dm_verity_io *io)
 {
 	bool is_zero;
 	struct dm_verity *v = io->v;
+	struct bio *bio = dm_bio_from_per_bio_data(io, v->ti->per_io_data_size);
 	struct bvec_iter start;
 	unsigned b;
 	struct crypto_wait wait;
-	struct bio *bio = dm_bio_from_per_bio_data(io, v->ti->per_io_data_size);
 
 	for (b = 0; b < io->n_blocks; b++) {
 		int r;
