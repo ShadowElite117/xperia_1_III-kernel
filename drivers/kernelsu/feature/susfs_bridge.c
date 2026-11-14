@@ -117,6 +117,9 @@ static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
 		if (!susfs_caller_is_privileged())
 			return false;
 		susfs_set_log(arg3 == 1);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
 		return true;
 #endif
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
@@ -137,6 +140,9 @@ static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
 		if (!susfs_caller_is_privileged())
 			return false;
 		susfs_run_try_umount_for_current_mnt_ns();
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
 		return true;
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -193,6 +199,35 @@ static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
 			return true;
 		}
 		error = susfs_set_uname((struct st_susfs_uname __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3, PAGE_SIZE)) {
+			pr_err("susfs_bridge: SET_CMDLINE arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_set_cmdline_or_bootconfig((char __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	case CMD_SUSFS_ADD_OPEN_REDIRECT:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3,
+				   sizeof(struct st_susfs_open_redirect))) {
+			pr_err("susfs_bridge: ADD_OPEN_REDIRECT arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_add_open_redirect((struct st_susfs_open_redirect __user *)arg3);
 		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
 			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
 				pr_info("susfs_bridge: copy_to_user failed\n");
