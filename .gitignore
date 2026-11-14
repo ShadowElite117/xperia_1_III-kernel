@@ -1,0 +1,139 @@
+# ---------------------------------------------------------------------------
+# Claude Code: configuración y contexto locales, no forman parte del kernel
+# ---------------------------------------------------------------------------
+/CLAUDE.md
+/CLAUDE.local.md
+.claude/
+
+# ---------------------------------------------------------------------------
+# Compilación fuera del árbol y salidas propias
+# ---------------------------------------------------------------------------
+/out/
+/dist/
+*.img
+*.zip
+
+# Defconfig generado por scripts/gki/generate_defconfig.sh
+/arch/arm64/configs/vendor/lahaina-*_defconfig
+/arch/arm64/configs/vendor/*_ALLYES_GKI.config
+
+# ---------------------------------------------------------------------------
+# Artefactos de compilación del kernel (por si se compila dentro del árbol;
+# Sony eliminó todos los .gitignore originales de la liberación)
+# ---------------------------------------------------------------------------
+.*
+!.gitignore
+!.mailmap
+!.cocciconfig
+!.clang-format
+!.get_maintainer.ignore
+*.a
+*.asn1.[ch]
+*.bin
+*.bz2
+*.c.[012]*.*
+*.dt.yaml
+*.dtb
+*.dtb.S
+*.dtbo
+*.dwo
+*.elf
+*.gcno
+*.gz
+*.i
+*.ko
+*.lex.c
+*.ll
+*.lst
+*.lz4
+*.lzma
+*.lzo
+*.mod
+*.mod.c
+*.o
+*.o.*
+*.order
+*.patch
+*.s
+*.so
+*.so.dbg
+*.su
+*.symtypes
+*.tab.[ch]
+*.tar
+*.xz
+Module.symvers
+modules.builtin
+modules.order
+
+# Raíz: imágenes y mapas generados
+/vmlinux
+/vmlinux.32
+/vmlinux-gdb.py
+/vmlinuz
+/System.map
+/Module.markers
+/modules.builtin.modinfo
+/modules.nsdeps
+/abi.xml
+/abi_symbollist.raw
+
+# Generados en include/
+/include/config/
+/include/generated/
+/include/ksym/
+/arch/*/include/generated/
+/usr/include/*
+!/usr/include/Makefile
+/usr/initramfs_data.cpio*
+!/scripts/Makefile.dtbo
+
+# Herramientas de host generadas en scripts/
+/scripts/basic/fixdep
+/scripts/kconfig/conf
+/scripts/kconfig/mconf
+/scripts/kconfig/nconf
+/scripts/kconfig/qconf
+/scripts/kconfig/gconf
+/scripts/kconfig/*conf-cfg
+/scripts/dtc/dtc
+/scripts/genksyms/genksyms
+/scripts/mod/modpost
+/scripts/mod/mk_elfconfig
+/scripts/mod/elfconfig.h
+/scripts/mod/devicetable-offsets.h
+/scripts/kallsyms
+/scripts/sortextable
+/scripts/asn1_compiler
+/scripts/extract-cert
+/scripts/sign-file
+/scripts/conmakehash
+/scripts/recordmcount
+/scripts/unifdef
+/scripts/selinux/genheaders/genheaders
+/scripts/selinux/mdp/mdp
+/scripts/gcc-plugins/*.so
+
+# Boot images de arm64 generadas
+/arch/arm64/boot/Image*
+/arch/arm64/kernel/vdso/vdso.lds
+/arch/arm64/kernel/vdso/vdso.so*
+/arch/arm64/kernel/vdso32/vdso.lds
+/arch/arm64/kernel/vdso32/vdso32.so*
+/arch/arm64/kernel/vmlinux.lds
+
+# Editores y herramientas
+*~
+*.swp
+*.orig
+*.rej
+\#*#
+tags
+TAGS
+GPATH
+GRTAGS
+GSYMS
+GTAGS
+cscope.*
+ncscope.*
+compile_commands.json
