@@ -18,6 +18,9 @@
 #include <linux/uaccess.h>
 #include <linux/cred.h>
 #include <linux/printk.h>
+#include <linux/namei.h>
+#include <linux/mount.h>
+#include <linux/string.h>
 #include <linux/susfs.h>
 #include <linux/susfs_def.h>
 
@@ -33,6 +36,49 @@ bool susfs_is_current_ksu_domain(void)
 {
 	return is_ksu_domain();
 }
+
+/* Used by fs/namespace.c to detect zygote-spawned processes. */
+bool susfs_is_current_zygote_domain(void)
+{
+	return is_zygote(current_cred());
+}
+
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+extern int path_umount(struct path *path, int flags);
+extern void susfs_run_try_umount_for_current_mnt_ns(void);
+
+/* Called by susfs_try_umount() in fs/susfs.c for each user-defined path. */
+void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid)
+{
+	struct path path;
+	int err = kern_path(mnt, 0, &path);
+
+	if (err)
+		return;
+
+	/* path_umount() releases the path's dentry/mnt references itself. */
+	err = path_umount(&path, flags);
+	if (err)
+		pr_warn("susfs_bridge: umount %s failed: %d\n", mnt, err);
+}
+
+/*
+ * Umount the susfs user-defined paths and then ksu's default module mount
+ * points for the given uid. Called from susfs_run_try_umount_for_current_mnt_ns()
+ * in fs/namespace.c (the RUN_UMOUNT manager command).
+ */
+void susfs_try_umount_all(uid_t uid)
+{
+	susfs_try_umount(uid);
+	ksu_try_umount("/system", true, 0, uid);
+	ksu_try_umount("/system_ext", true, 0, uid);
+	ksu_try_umount("/vendor", true, 0, uid);
+	ksu_try_umount("/product", true, 0, uid);
+	ksu_try_umount("/odm", true, 0, uid);
+	ksu_try_umount("/data/adb/modules", false, MNT_DETACH, uid);
+	ksu_try_umount("/debug_ramdisk", true, MNT_DETACH, uid);
+}
+#endif
 
 static bool susfs_caller_is_privileged(void)
 {
@@ -73,6 +119,97 @@ static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
 		susfs_set_log(arg3 == 1);
 		return true;
 #endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+	case CMD_SUSFS_ADD_TRY_UMOUNT:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3,
+				   sizeof(struct st_susfs_try_umount))) {
+			pr_err("susfs_bridge: ADD_TRY_UMOUNT arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_add_try_umount((struct st_susfs_try_umount __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+	case CMD_SUSFS_RUN_UMOUNT_FOR_CURRENT_MNT_NS:
+		if (!susfs_caller_is_privileged())
+			return false;
+		susfs_run_try_umount_for_current_mnt_ns();
+		return true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	case CMD_SUSFS_ADD_SUS_MOUNT:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3,
+				   sizeof(struct st_susfs_sus_mount))) {
+			pr_err("susfs_bridge: ADD_SUS_MOUNT arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_add_sus_mount((struct st_susfs_sus_mount __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	case CMD_SUSFS_ADD_SUS_KSTAT:
+	case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3,
+				   sizeof(struct st_susfs_sus_kstat))) {
+			pr_err("susfs_bridge: ADD_SUS_KSTAT arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_add_sus_kstat((struct st_susfs_sus_kstat __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+	case CMD_SUSFS_UPDATE_SUS_KSTAT:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3,
+				   sizeof(struct st_susfs_sus_kstat))) {
+			pr_err("susfs_bridge: UPDATE_SUS_KSTAT arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_update_sus_kstat((struct st_susfs_sus_kstat __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+	case CMD_SUSFS_SET_UNAME:
+		if (!susfs_caller_is_privileged())
+			return false;
+		if (!ksu_access_ok((void __user *)arg3,
+				   sizeof(struct st_susfs_uname))) {
+			pr_err("susfs_bridge: SET_UNAME arg3 not accessible\n");
+			return true;
+		}
+		error = susfs_set_uname((struct st_susfs_uname __user *)arg3);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+#endif
+	case CMD_SUSFS_SHOW_VERSION: {
+		const char *ver = SUSFS_VERSION;
+		size_t len = strlen(ver) + 1;
+
+		if (!ksu_access_ok((void __user *)arg3, len))
+			return true;
+		error = copy_to_user((void __user *)arg3, ver, len);
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+	}
 	default:
 		return false;
 	}

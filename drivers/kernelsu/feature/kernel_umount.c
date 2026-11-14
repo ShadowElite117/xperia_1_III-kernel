@@ -21,6 +21,9 @@
 #include "runtime/ksud_boot.h"
 #include "ksu.h"
 #include "compat/kernel_compat.h"
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+#include <linux/susfs.h>
+#endif
 
 static bool ksu_kernel_umount_enabled = true;
 
@@ -97,6 +100,7 @@ static void try_umount(const char *mnt, int flags)
 
 struct umount_tw {
 	struct callback_head cb;
+	uid_t uid;
 };
 
 static void umount_tw_func(struct callback_head *cb)
@@ -105,6 +109,10 @@ static void umount_tw_func(struct callback_head *cb)
 	const struct cred *saved = override_creds(ksu_cred);
 
     struct mount_entry *entry;
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+    /* susfs user-defined umount paths run before ksu's default umounts. */
+    susfs_try_umount(tw->uid);
+#endif
     down_read(&mount_list_lock);
     list_for_each_entry(entry, &mount_list, list) {
         pr_info("%s: unmounting: %s flags: 0x%x\n", __func__, entry->umountable, entry->flags);
@@ -165,6 +173,7 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
 	if (!tw)
 		return 0;
 
+	tw->uid = new_uid;
 	tw->cb.func = umount_tw_func;
 
 	int err = task_work_add(current, &tw->cb, TWA_RESUME);
