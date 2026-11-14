@@ -12,6 +12,7 @@
 #ifdef CONFIG_SECCOMP
 
 #include <linux/thread_info.h>
+#include <linux/atomic.h>
 #include <asm/seccomp.h>
 
 struct seccomp_filter;
@@ -28,6 +29,10 @@ struct seccomp_filter;
  */
 struct seccomp {
 	int mode;
+#ifndef __GENKSYMS__
+	/* KernelSU: hidden from genksyms to keep the stock module ABI. */
+	atomic_t filter_count;
+#endif
 	struct seccomp_filter *filter;
 };
 

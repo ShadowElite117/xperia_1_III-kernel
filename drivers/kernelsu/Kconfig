@@ -1,0 +1,104 @@
+menu "KernelSU"
+
+config KSU
+	tristate "KernelSU function support"
+	default y
+	help
+	  Enable kernel-level root privileges on Android System.
+	  Requires CONFIG_KPROBES for kernel hooking support.
+	  To compile as a module, choose M here: the
+	  module will be called kernelsu.
+
+config KSU_DEBUG
+	bool "KernelSU debug mode"
+	depends on KSU
+	default n
+	help
+	  Enable KernelSU debug mode.
+
+config KSU_DISABLE_MANAGER
+	bool "Disable KernelSU manager integration"
+	depends on KSU
+	default n
+	help
+	  Disable manager APK detection and manager-specific handling.
+	  Root will be used in place of manager-only functionality.
+
+config KSU_DISABLE_POLICY
+	bool "Disable KernelSU policy profiles"
+	depends on KSU
+	default n
+	help
+	  Disable per-app root/non-root profile customization.
+	  Escalation will always use the default full root profile, and
+	  non-root handling will follow the global umount policy only.
+
+config KSU_ALLOWLIST_WORKAROUND
+	bool "KernelSU allowlist workaround"
+	depends on KSU
+	default n
+	help
+	  Enable workaround for broken allowlist save
+
+# For easier extern ifdef handling
+config KSU_MANUAL_HOOK
+	bool "KernelSU manual hook mode."
+	depends on KSU && KSU != m
+	default y if !KPROBES
+	default n
+	help
+	  Enable manual hook support.
+
+choice
+	prompt "KernelSU dynamic hook mode"
+	depends on KSU && !KSU_MANUAL_HOOK
+	default KSU_KPROBES_HOOK
+
+config KSU_KPROBES_HOOK
+	bool "KernelSU tracepoint+kretprobe hook"
+	depends on KRETPROBES && KPROBES && HAVE_SYSCALL_TRACEPOINTS
+	help
+	  Enable KPROBES, KRETPROBES and TRACEPOINT hook for KernelSU core.
+	  This should not be used on kernel below 5.10.
+
+config KSU_SYSCALL_TABLE_HOOK
+	bool "KernelSU syscall table patching hook"
+	depends on ARM64 || X86_64
+	help
+	  Patch sys_call_table entries directly to hook syscalls without
+	  kprobes or tracepoints. Intended for non-GKI kernels where kprobes
+	  are unavailable or non-functional.
+	  Requires kernel >= 4.17 (pt_regs-based syscall ABI).
+
+endchoice
+
+config KSU_SUSFS
+	bool "KernelSU addon - SUSFS"
+	depends on KSU
+	default n
+	help
+	  Patch and enable SUSFS (susfs4ksu) support with KernelSU Next.
+	  Bridged to susfs via a dedicated prctl kprobe (ksu_susfs tool uses
+	  prctl 0xDEADBEEF), since KernelSU Next uses an ioctl supercall and
+	  has no native prctl handler. Requires the susfs kernel patch
+	  (fs/susfs.c and friends) applied in the kernel tree.
+
+config KSU_SUSFS_SUS_PATH
+	bool "Enable to hide suspicious path (NOT recommended)"
+	depends on KSU_SUSFS
+	default y
+	help
+	  - Allow hiding the user-defined path and all its sub-paths from
+	    various system calls.
+	  - tmpfs filesystem is not allowed to be added.
+	  - Effective only on zygote spawned user app process.
+
+config KSU_SUSFS_ENABLE_LOG
+	bool "Enable logging susfs log to kernel"
+	depends on KSU_SUSFS
+	default y
+	help
+	  - Allow logging susfs log to kernel, uncheck it to completely
+	    disable all susfs log.
+
+endmenu
