@@ -1255,8 +1255,15 @@ static int geni_i2c_xfer(struct i2c_adapter *adap,
 		}
 		ret = gi2c->err;
 		if (gi2c->err) {
-			GENI_SE_ERR(gi2c->ipcl, true, gi2c->dev,
-				"i2c error :%d\n", gi2c->err);
+			/*
+			 * A NACK (-ENOTCONN) is the normal way some slaves wake
+			 * up from standby (e.g. NFC, haptics): their drivers
+			 * retry. Keep it in the IPC log only, like
+			 * geni_i2c_err() already does, and leave dmesg for
+			 * real bus errors.
+			 */
+			GENI_SE_ERR(gi2c->ipcl, gi2c->err != -ENOTCONN,
+				gi2c->dev, "i2c error :%d\n", gi2c->err);
 			break;
 		}
 	}
