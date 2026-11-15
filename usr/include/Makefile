@@ -8,7 +8,11 @@
 # We cannot go as far as adding -Wpedantic since it emits too many warnings.
 UAPI_CFLAGS := -std=c90 -Wall -Werror=implicit-function-declaration
 
-override c_flags = $(UAPI_CFLAGS) -Wp,-MD,$(depfile) -I$(objtree)/usr/include
+# Upstream passes -m32/-m64/--target here, which makes clang look for a target
+# (aarch64) libc. This build has no arm64 sysroot, so the header tests keep
+# compiling with the host's libc headers, as before 5.4.302.
+
+override c_flags = $(UAPI_CFLAGS) -Wp,-MMD,$(depfile) -I$(objtree)/usr/include
 
 # The following are excluded for now because they fail to build.
 #
