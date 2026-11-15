@@ -1015,7 +1015,8 @@ static void qrtr_fwd_ctrl_pkt(struct qrtr_node *src, struct sk_buff *skb)
 		if (!qrtr_must_forward(src, node, cb->type))
 			continue;
 
-		skbn = skb_clone(skb, GFP_KERNEL);
+		/* the enqueue pushes a header: do not share data with skb */
+		skbn = pskb_copy(skb, GFP_KERNEL);
 		if (!skbn)
 			break;
 
@@ -1604,7 +1605,7 @@ static int qrtr_bcast_enqueue(struct qrtr_node *node, struct sk_buff *skb,
 		if (node->nid == QRTR_EP_NID_AUTO && type != QRTR_TYPE_HELLO)
 			continue;
 
-		skbn = skb_clone(skb, GFP_KERNEL);
+		skbn = pskb_copy(skb, GFP_KERNEL);
 		if (!skbn)
 			break;
 		skb_set_owner_w(skbn, skb->sk);
