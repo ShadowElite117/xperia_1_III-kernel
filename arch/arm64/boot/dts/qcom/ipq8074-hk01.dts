@@ -54,7 +54,7 @@
 			 status = "ok";
 		};
 
-		nand@79b0000 {
+		nand-controller@79b0000 {
 			status = "ok";
 
 			nand@0 {
