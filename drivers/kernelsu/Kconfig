@@ -124,6 +124,16 @@ config KSU_SUSFS_SPOOF_UNAME
 	default y
 	help
 	  - Allow spoofing the string returned by the uname syscall.
+	  - /proc/version follows the spoofed release and version too.
+
+config KSU_SUSFS_SPOOF_PROC_VERSION_BUILD_INFO
+	string "Build info shown in /proc/version while uname is spoofed"
+	depends on KSU_SUSFS_SPOOF_UNAME
+	default ""
+	help
+	  The "(user@host) (compiler)" part of /proc/version to show while a
+	  spoofed uname is set, so that it matches the spoofed kernel, e.g.
+	  the stock firmware's. Empty keeps this kernel's own build info.
 
 config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
 	bool "Enable to hide ksu and susfs symbols from /proc/kallsyms"

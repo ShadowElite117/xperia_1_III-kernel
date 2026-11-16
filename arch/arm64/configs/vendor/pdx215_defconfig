@@ -941,3 +941,4 @@ CONFIG_CORESIGHT_REMOTE_ETM=y
 CONFIG_CORESIGHT_TGU=y
 CONFIG_KSU=y
 CONFIG_KSU_SUSFS=y
+CONFIG_KSU_SUSFS_SPOOF_PROC_VERSION_BUILD_INFO="(hudsonslave@ip-10-26-20-212) (Android (6877366 based on r383902b1) clang version 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79), LLD 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79))"
