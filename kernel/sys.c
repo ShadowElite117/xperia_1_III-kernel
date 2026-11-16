@@ -2426,12 +2426,25 @@ static int prctl_set_vma(unsigned long opt, unsigned long start,
 }
 #endif
 
+#ifdef CONFIG_KSU_SUSFS
+/* susfs command channel, see drivers/kernelsu/feature/susfs_bridge.c */
+extern bool ksu_susfs_handle_prctl(int option, unsigned long cmd,
+				   unsigned long arg3, unsigned long arg4,
+				   unsigned long arg5);
+#endif
+
 SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
 		unsigned long, arg4, unsigned long, arg5)
 {
 	struct task_struct *me = current;
 	unsigned char comm[sizeof(me->comm)];
 	long error;
+
+#ifdef CONFIG_KSU_SUSFS
+	if (unlikely((unsigned int)option == 0xDEADBEEF) &&
+	    ksu_susfs_handle_prctl(option, arg2, arg3, arg4, arg5))
+		return 0;
+#endif
 
 	error = security_task_prctl(option, arg2, arg3, arg4, arg5);
 	if (error != -ENOSYS)

@@ -6,15 +6,15 @@
  *   prctl(KERNEL_SU_OPTION = 0xDEADBEEF, CMD_SUSFS_*, arg3, arg4, arg5)
  * which is the weishu KernelSU convention. KernelSU Next dropped the prctl
  * handler in favour of an ioctl supercall, so there is nothing to route the
- * susfs commands. We install a dedicated kprobe on the prctl syscall and
- * route only the susfs commands, leaving every other prctl untouched.
+ * susfs commands. The prctl syscall (kernel/sys.c) calls
+ * ksu_susfs_handle_prctl() directly for that magic option, so the handlers
+ * run in normal process context: user memory can fault in and they may
+ * sleep. Every other prctl is left untouched.
  *
  * Only root or the KernelSU manager may configure susfs.
  */
 
 #include <linux/version.h>
-#include <linux/kprobes.h>
-#include <linux/ptrace.h>
 #include <linux/uaccess.h>
 #include <linux/cred.h>
 #include <linux/printk.h>
@@ -85,14 +85,23 @@ static bool susfs_caller_is_privileged(void)
 	return current_uid().val == 0 || is_manager();
 }
 
-/* Returns true when the prctl was a susfs command and was consumed here. */
-static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
-				   unsigned long arg3, unsigned long arg4,
-				   unsigned long arg5)
+/*
+ * Called from the prctl syscall. Returns true when the prctl was a susfs
+ * command and was consumed here; the result is reported through arg5.
+ */
+bool ksu_susfs_handle_prctl(int option, unsigned long cmd, unsigned long arg3,
+			    unsigned long arg4, unsigned long arg5)
 {
 	int error = 0;
 
-	if (option != KSU_SUSFS_PRCTL_MAGIC)
+	if ((unsigned int)option != KSU_SUSFS_PRCTL_MAGIC)
+		return false;
+
+	/*
+	 * Unprivileged callers fall through to the normal prctl path (-EINVAL),
+	 * exactly as on a kernel without susfs, so apps cannot probe for it.
+	 */
+	if (!susfs_caller_is_privileged())
 		return false;
 
 	switch (cmd) {
@@ -239,7 +248,60 @@ static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
 
 		if (!ksu_access_ok((void __user *)arg3, len))
 			return true;
-		error = copy_to_user((void __user *)arg3, ver, len);
+		error = copy_to_user((void __user *)arg3, ver, len) ? -EFAULT : 0;
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+	}
+	case CMD_SUSFS_SHOW_ENABLED_FEATURES: {
+		/* Same bit layout as the susfs4ksu v1.5.5 KernelSU patch. */
+		u64 features = 0;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+		features |= BIT_ULL(0);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+		features |= BIT_ULL(1);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		features |= BIT_ULL(4);
+#endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+		features |= BIT_ULL(6);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+		features |= BIT_ULL(8);
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+		features |= BIT_ULL(9);
+#endif
+#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+		features |= BIT_ULL(10);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+		features |= BIT_ULL(11);
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+		features |= BIT_ULL(12);
+#endif
+		if (!ksu_access_ok((void __user *)arg3, sizeof(features)))
+			return true;
+		error = copy_to_user((void __user *)arg3, &features,
+				     sizeof(features)) ? -EFAULT : 0;
+		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
+			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
+				pr_info("susfs_bridge: copy_to_user failed\n");
+		return true;
+	}
+	case CMD_SUSFS_SHOW_VARIANT: {
+		const char *variant = SUSFS_VARIANT;
+		size_t len = strlen(variant) + 1;
+
+		if (!ksu_access_ok((void __user *)arg3, len))
+			return true;
+		error = copy_to_user((void __user *)arg3, variant, len) ?
+			-EFAULT : 0;
 		if (arg5 && ksu_access_ok((void __user *)arg5, sizeof(error)))
 			if (copy_to_user((void __user *)arg5, &error, sizeof(error)))
 				pr_info("susfs_bridge: copy_to_user failed\n");
@@ -250,43 +312,11 @@ static bool ksu_handle_susfs_prctl(unsigned int option, unsigned long cmd,
 	}
 }
 
-static int susfs_prctl_pre(struct kprobe *p, struct pt_regs *regs)
-{
-	/*
-	 * arm64 pt_regs-based syscall ABI: __arm64_sys_prctl(const struct
-	 * pt_regs *regs) receives the pointer to the syscall pt_regs in x0.
-	 */
-	struct pt_regs *sys = (struct pt_regs *)regs->regs[0];
-	unsigned int option;
-
-	if (!sys)
-		return 0;
-
-	option = (unsigned int)sys->regs[0];
-	if (likely(option != KSU_SUSFS_PRCTL_MAGIC))
-		return 0;
-
-	ksu_handle_susfs_prctl(option, sys->regs[1], sys->regs[2],
-			       sys->regs[3], sys->regs[4]);
-	return 0;
-}
-
-static struct kprobe susfs_prctl_kp = {
-	.symbol_name = "__arm64_sys_prctl",
-	.pre_handler = susfs_prctl_pre,
-};
-
 void ksu_susfs_bridge_init(void)
 {
-	int ret = register_kprobe(&susfs_prctl_kp);
-
-	if (ret)
-		pr_err("susfs_bridge: register_kprobe(prctl) failed: %d\n", ret);
-	else
-		pr_info("susfs_bridge: prctl bridge installed\n");
+	pr_info("susfs_bridge: prctl handler ready\n");
 }
 
 void ksu_susfs_bridge_exit(void)
 {
-	unregister_kprobe(&susfs_prctl_kp);
 }
