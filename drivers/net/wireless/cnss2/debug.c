@@ -910,7 +910,13 @@ void cnss_debug_ipc_log_print(void *log_ctx, char *process, const char *fn,
 	vaf.fmt = fmt;
 	vaf.va = &va_args;
 
-	if (log_level)
+	/*
+	 * Debug-level messages (runtime PM, MHI state, PCIe link: ~11 lines
+	 * every few seconds while Wi-Fi is up) only go to the IPC log unless
+	 * CONFIG_CNSS2_DEBUG is set, so they don't flood the kernel log.
+	 */
+	if (log_level && (IS_ENABLED(CONFIG_CNSS2_DEBUG) ||
+			  printk_get_level(log_level) != LOGLEVEL_DEBUG + '0'))
 		printk("%scnss: %pV", log_level, &vaf);
 
 	ipc_log_string(log_ctx, "[%s] %s: %pV", process, fn, &vaf);
