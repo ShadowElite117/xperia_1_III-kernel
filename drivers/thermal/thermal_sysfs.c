@@ -1166,7 +1166,13 @@ static void cooling_device_stats_setup(struct thermal_cooling_device *cdev)
 	var += sizeof(*stats->time_in_state) * states;
 	var += sizeof(*stats->trans_table) * states * states;
 
-	stats = kzalloc(var, GFP_KERNEL);
+	/*
+	 * The table grows with the square of the state count: a cooling
+	 * device with thousands of states (the display backlight has 4096
+	 * brightness levels) would need tens of MB. Let that allocation fail
+	 * quietly and go without stats for that device.
+	 */
+	stats = kzalloc(var, GFP_KERNEL | __GFP_NOWARN);
 	if (!stats)
 		goto out;
 
