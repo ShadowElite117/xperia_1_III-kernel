@@ -409,10 +409,9 @@ int sbitmap_queue_init_node(struct sbitmap_queue *sbq, unsigned int depth,
 }
 EXPORT_SYMBOL_GPL(sbitmap_queue_init_node);
 
-static void sbitmap_queue_update_wake_batch(struct sbitmap_queue *sbq,
-					    unsigned int depth)
+void sbitmap_queue_set_wake_batch(struct sbitmap_queue *sbq,
+				  unsigned int wake_batch)
 {
-	unsigned int wake_batch = sbq_calc_wake_batch(sbq, depth);
 	int i;
 
 	if (sbq->wake_batch != wake_batch) {
@@ -426,6 +425,12 @@ static void sbitmap_queue_update_wake_batch(struct sbitmap_queue *sbq,
 		for (i = 0; i < SBQ_WAIT_QUEUES; i++)
 			atomic_set(&sbq->ws[i].wait_cnt, 1);
 	}
+}
+
+static void sbitmap_queue_update_wake_batch(struct sbitmap_queue *sbq,
+					    unsigned int depth)
+{
+	sbitmap_queue_set_wake_batch(sbq, sbq_calc_wake_batch(sbq, depth));
 }
 
 void sbitmap_queue_resize(struct sbitmap_queue *sbq, unsigned int depth)

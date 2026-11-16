@@ -399,6 +399,15 @@ static inline void sbitmap_queue_free(struct sbitmap_queue *sbq)
 void sbitmap_queue_resize(struct sbitmap_queue *sbq, unsigned int depth);
 
 /**
+ * sbitmap_queue_set_wake_batch() - Set how many bits must be freed before
+ * a waiter is woken up.
+ * @sbq: Bitmap queue.
+ * @wake_batch: New batch size (1 wakes a waiter on every free).
+ */
+void sbitmap_queue_set_wake_batch(struct sbitmap_queue *sbq,
+				  unsigned int wake_batch);
+
+/**
  * __sbitmap_queue_get() - Try to allocate a free bit from a &struct
  * sbitmap_queue with preemption already disabled.
  * @sbq: Bitmap queue to allocate from.

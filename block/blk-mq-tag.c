@@ -32,8 +32,18 @@ bool blk_mq_has_free_tags(struct blk_mq_tags *tags)
 bool __blk_mq_tag_busy(struct blk_mq_hw_ctx *hctx)
 {
 	if (!test_bit(BLK_MQ_S_TAG_ACTIVE, &hctx->state) &&
-	    !test_and_set_bit(BLK_MQ_S_TAG_ACTIVE, &hctx->state))
+	    !test_and_set_bit(BLK_MQ_S_TAG_ACTIVE, &hctx->state)) {
 		atomic_inc(&hctx->tags->active_queues);
+		/*
+		 * Fair sharing caps each queue at depth / users tags, which
+		 * can be fewer than wake_batch frees per wait queue. Tasks
+		 * sleeping for a tag, spread over the wait queues, may then be
+		 * left with nothing in flight to wake them (UFS LUNs with no
+		 * I/O scheduler stalled first-stage init for ~5 s). Wake a
+		 * waiter on every freed tag of a shared tag set.
+		 */
+		sbitmap_queue_set_wake_batch(&hctx->tags->bitmap_tags, 1);
+	}
 
 	return true;
 }
@@ -566,6 +576,9 @@ int blk_mq_tag_update_depth(struct blk_mq_hw_ctx *hctx,
 		 */
 		sbitmap_queue_resize(&tags->bitmap_tags,
 				tdepth - tags->nr_reserved_tags);
+		/* keep the shared tag set fix from __blk_mq_tag_busy() */
+		if (hctx->flags & BLK_MQ_F_TAG_SHARED)
+			sbitmap_queue_set_wake_batch(&tags->bitmap_tags, 1);
 	}
 
 	return 0;
