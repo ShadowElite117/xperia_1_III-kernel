@@ -625,10 +625,14 @@ static inline bool elv_support_iosched(struct request_queue *q)
 
 /*
  * For single queue devices, default to using mq-deadline. If we have multiple
- * queues or mq-deadline is not available, default to "none".
+ * queues, the driver asked for no scheduler by default, or mq-deadline is not
+ * available, default to "none".
  */
 static struct elevator_type *elevator_get_default(struct request_queue *q)
 {
+	if (q->tag_set && q->tag_set->flags & BLK_MQ_F_NO_SCHED_BY_DEFAULT)
+		return NULL;
+
 	if (q->nr_hw_queues != 1)
 		return NULL;
 

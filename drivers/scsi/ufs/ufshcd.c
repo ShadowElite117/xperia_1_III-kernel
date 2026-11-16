@@ -9553,6 +9553,14 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 		goto exit_gating;
 	}
 
+	/*
+	 * UFS queues and reorders commands in the device itself; measured on
+	 * pdx215, "none" beats mq-deadline, kyber and bfq on foreground read
+	 * latency under background writes. The LUNs are scanned later, so
+	 * their queues pick this up when the elevator is chosen.
+	 */
+	host->tag_set.flags |= BLK_MQ_F_NO_SCHED_BY_DEFAULT;
+
 	/* Reset the attached device */
 	ufshcd_vops_device_reset(hba);
 
