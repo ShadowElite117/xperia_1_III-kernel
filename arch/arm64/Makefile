@@ -59,6 +59,11 @@ else
 KBUILD_CFLAGS	+= -mgeneral-regs-only
 endif
 
+# Snapdragon 888: Cortex-A55 + A78 + X1 share the same ARMv8.2 ISA, so code
+# built for the A55 runs on every core. Scheduling for the in-order A55 helps
+# the little cores, and the out-of-order big cores reorder it anyway.
+KBUILD_CFLAGS	+= $(call cc-option,-mcpu=cortex-a55)
+
 KBUILD_CFLAGS	+= $(lseinstr) $(brokengasinst)	\
 		   $(compat_vdso) $(cc_has_k_constraint)
 KBUILD_CFLAGS	+= -fno-asynchronous-unwind-tables
