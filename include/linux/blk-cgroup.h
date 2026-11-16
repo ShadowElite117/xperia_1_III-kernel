@@ -737,9 +737,13 @@ static inline bool blkcg_bio_issue_check(struct request_queue *q,
 	if (!bio->bi_blkg) {
 		char b[BDEVNAME_SIZE];
 
-		WARN_ONCE(1,
-			  "no blkg associated for bio on block-device: %s\n",
-			  bio_devname(bio, b));
+		/*
+		 * Out-of-tree filesystems (texfat) still build bios without
+		 * bio_set_dev(). The bio is fixed up right below, so log it
+		 * once instead of a WARN splat.
+		 */
+		pr_warn_once("no blkg associated for bio on block-device: %s\n",
+			     bio_devname(bio, b));
 		bio_associate_blkg(bio);
 	}
 
