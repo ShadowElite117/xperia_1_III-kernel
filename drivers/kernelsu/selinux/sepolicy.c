@@ -16,6 +16,7 @@
 #include "sepolicy.h"
 #include "klog.h" // IWYU pragma: keep
 #include "ss/symtab.h"
+#include "ss/context.h"
 #include "compat/kernel_compat.h" // Add check Huawei Device
 
 #define KSU_SUPPORT_ADD_TYPE
@@ -747,9 +748,146 @@ free_trans_pre57:
 #endif
 }
 
+/*
+ * Build a context from "user:role:type:level". Only a single MLS level
+ * without categories (e.g. "s0") is accepted, which is what genfscon rules
+ * for filesystems use.
+ */
+static bool parse_genfs_context(struct policydb *db, const char *str,
+                                struct context *ctx)
+{
+    struct user_datum *usr;
+    struct role_datum *role;
+    struct type_datum *type;
+    struct level_datum *lvl;
+    char *buf, *p, *u, *r, *t, *l;
+    bool ok = false;
+
+    buf = kstrdup(str, KSU_SEPOL_GFP);
+    if (!buf)
+        return false;
+    p = buf;
+    u = strsep(&p, ":");
+    r = strsep(&p, ":");
+    t = strsep(&p, ":");
+    l = p; /* the rest is the level */
+    if (!u || !r || !t || !*u || !*r || !*t)
+        goto out;
+
+    usr = symtab_search(&db->p_users, u);
+    role = symtab_search(&db->p_roles, r);
+    type = symtab_search(&db->p_types, t);
+    if (!usr || !role || !type) {
+        pr_err("genfscon: unknown user, role or type in %s\n", str);
+        goto out;
+    }
+
+    context_init(ctx);
+    ctx->user = usr->value;
+    ctx->role = role->value;
+    ctx->type = type->value;
+
+    if (db->mls_enabled) {
+        if (!l || !*l || strchr(l, ':') || strchr(l, '-')) {
+            pr_err("genfscon: unsupported MLS level in %s\n", str);
+            goto out;
+        }
+        lvl = symtab_search(&db->p_levels, l);
+        if (!lvl) {
+            pr_err("genfscon: unknown level in %s\n", str);
+            goto out;
+        }
+        ctx->range.level[0].sens = lvl->level->sens;
+        ctx->range.level[1].sens = lvl->level->sens;
+    }
+
+    if (!policydb_context_isvalid(db, ctx)) {
+        pr_err("genfscon: invalid context %s\n", str);
+        goto out;
+    }
+    ok = true;
+out:
+    kfree(buf);
+    return ok;
+}
+
+/*
+ * Add or replace "genfscon fs_name path context". __security_genfs_sid()
+ * expects the genfs list sorted by fstype and each entry's paths sorted from
+ * the longest to the shortest (most specific prefix first), as
+ * policydb_read() leaves them. The SID of the new context is filled in on
+ * first use, like for contexts read from the policy.
+ */
 static bool add_genfscon(struct policydb *db, const char *fs_name,
                          const char *path, const char *context)
 {
+    struct genfs *genfs, *gprev = NULL, *newgenfs = NULL;
+    struct ocontext *c, *cprev = NULL, *newc;
+    struct context ctx;
+    size_t len = strlen(path);
+    int cmp = 1;
+
+    if (!parse_genfs_context(db, context, &ctx))
+        return false;
+
+    for (genfs = db->genfs; genfs; gprev = genfs, genfs = genfs->next) {
+        cmp = strcmp(fs_name, genfs->fstype);
+        if (cmp <= 0)
+            break;
+    }
+
+    if (genfs && !cmp) {
+        for (c = genfs->head; c; c = c->next) {
+            if (!c->v.sclass && !strcmp(c->u.name, path)) {
+                /* Same entry: just relabel it. */
+                context_destroy(&c->context[0]);
+                if (context_cpy(&c->context[0], &ctx))
+                    return false;
+                smp_store_release(&c->sid[0], 0);
+                return true;
+            }
+        }
+    }
+
+    newc = kzalloc(sizeof(*newc), KSU_SEPOL_GFP);
+    if (!newc)
+        return false;
+    newc->u.name = kstrdup(path, KSU_SEPOL_GFP);
+    if (!newc->u.name || context_cpy(&newc->context[0], &ctx))
+        goto free_c;
+
+    if (!genfs || cmp) {
+        newgenfs = kzalloc(sizeof(*newgenfs), KSU_SEPOL_GFP);
+        if (!newgenfs)
+            goto free_c;
+        newgenfs->fstype = kstrdup(fs_name, KSU_SEPOL_GFP);
+        if (!newgenfs->fstype) {
+            kfree(newgenfs);
+            goto free_c;
+        }
+        newgenfs->head = newc;
+        newgenfs->next = genfs;
+        if (gprev)
+            gprev->next = newgenfs;
+        else
+            db->genfs = newgenfs;
+        return true;
+    }
+
+    for (c = genfs->head; c; cprev = c, c = c->next)
+        if (len > strlen(c->u.name))
+            break;
+    newc->next = c;
+    if (cprev)
+        cprev->next = newc;
+    else
+        genfs->head = newc;
+    return true;
+
+free_c:
+    context_destroy(&newc->context[0]);
+    kfree(newc->u.name);
+    kfree(newc);
     return false;
 }
 
