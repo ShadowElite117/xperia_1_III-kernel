@@ -1246,10 +1246,10 @@ int ntfs_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
 
 // clang-format off
 const struct inode_operations ntfs_file_inode_operations = {
-	.getattr	= ntfs_getattr,
-	.setattr	= ntfs3_setattr,
+	.getattr	= ntfs_getattr_54,
+	.setattr	= ntfs3_setattr_54,
 	.listxattr	= ntfs_listxattr,
-	.permission	= ntfs_permission,
+	.permission	= ntfs_permission_54,
 	.get_acl	= ntfs_get_acl,
 	.set_acl	= ntfs_set_acl,
 	.fiemap		= ntfs_fiemap,

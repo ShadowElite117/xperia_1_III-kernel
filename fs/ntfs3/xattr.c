@@ -1047,6 +1047,27 @@ void ntfs_get_wsl_perm(struct inode *inode)
 	}
 }
 
+/*
+ * Linux 5.4 (Android) xattr_handler signatures: ->get takes the vfs flags
+ * (XATTR_NOSECURITY) and ->set takes no struct user_namespace.
+ */
+static int ntfs_getxattr_54(const struct xattr_handler *handler,
+			    struct dentry *de, struct inode *inode,
+			    const char *name, void *buffer, size_t size,
+			    int flags)
+{
+	return ntfs_getxattr(handler, de, inode, name, buffer, size);
+}
+
+static int ntfs_setxattr_54(const struct xattr_handler *handler,
+			    struct dentry *de, struct inode *inode,
+			    const char *name, const void *value, size_t size,
+			    int flags)
+{
+	return ntfs_setxattr(handler, &init_user_ns, de, inode, name, value,
+			     size, flags);
+}
+
 static bool ntfs_xattr_user_list(struct dentry *dentry)
 {
 	return true;
@@ -1055,8 +1076,8 @@ static bool ntfs_xattr_user_list(struct dentry *dentry)
 // clang-format off
 static const struct xattr_handler ntfs_other_xattr_handler = {
 	.prefix	= "",
-	.get	= ntfs_getxattr,
-	.set	= ntfs_setxattr,
+	.get	= ntfs_getxattr_54,
+	.set	= ntfs_setxattr_54,
 	.list	= ntfs_xattr_user_list,
 };
 

@@ -734,9 +734,14 @@ static int ntfs_readpage(struct file *file, struct page *page)
 	return mpage_readpage(page, ntfs_get_block);
 }
 
-static void ntfs_readahead(struct readahead_control *rac)
+/*
+ * 5.4 has ->readpages instead of ->readahead (5.8). Pages left on the list
+ * are dropped by read_pages() and read later through ->readpage, which is
+ * what returning early from ->readahead achieves upstream.
+ */
+static int ntfs_readpages(struct file *file, struct address_space *mapping,
+			  struct list_head *pages, unsigned int nr_pages)
 {
-	struct address_space *mapping = rac->mapping;
 	struct inode *inode = mapping->host;
 	struct ntfs_inode *ni = ntfs_i(inode);
 	u64 valid;
@@ -744,24 +749,25 @@ static void ntfs_readahead(struct readahead_control *rac)
 
 	if (is_resident(ni)) {
 		/* No readahead for resident. */
-		return;
+		return 0;
 	}
 
 	if (is_compressed(ni)) {
 		/* No readahead for compressed. */
-		return;
+		return 0;
 	}
 
 	valid = ni->i_valid;
-	pos = readahead_pos(rac);
+	/* The list is in reverse order: its last entry has the lowest index. */
+	pos = (loff_t)lru_to_page(pages)->index << PAGE_SHIFT;
 
 	if (valid < i_size_read(inode) && pos <= valid &&
-	    valid < pos + readahead_length(rac)) {
+	    valid < pos + ((loff_t)nr_pages << PAGE_SHIFT)) {
 		/* Range cross 'valid'. Read it page by page. */
-		return;
+		return 0;
 	}
 
-	mpage_readahead(rac, ntfs_get_block);
+	return mpage_readpages(mapping, pages, nr_pages, ntfs_get_block);
 }
 
 static int ntfs_get_block_direct_IO_R(struct inode *inode, sector_t iblock,
@@ -1971,14 +1977,14 @@ static const char *ntfs_get_link(struct dentry *de, struct inode *inode,
 // clang-format off
 const struct inode_operations ntfs_link_inode_operations = {
 	.get_link	= ntfs_get_link,
-	.setattr	= ntfs3_setattr,
+	.setattr	= ntfs3_setattr_54,
 	.listxattr	= ntfs_listxattr,
-	.permission	= ntfs_permission,
+	.permission	= ntfs_permission_54,
 };
 
 const struct address_space_operations ntfs_aops = {
 	.readpage	= ntfs_readpage,
-	.readahead	= ntfs_readahead,
+	.readpages	= ntfs_readpages,
 	.writepage	= ntfs_writepage,
 	.writepages	= ntfs_writepages,
 	.write_begin	= ntfs_write_begin,
@@ -1990,6 +1996,6 @@ const struct address_space_operations ntfs_aops = {
 
 const struct address_space_operations ntfs_aops_cmpr = {
 	.readpage	= ntfs_readpage,
-	.readahead	= ntfs_readahead,
+	.readpages	= ntfs_readpages,
 };
 // clang-format on

@@ -367,29 +367,62 @@ struct dentry *ntfs3_get_parent(struct dentry *child)
 	return ERR_PTR(-ENOENT);
 }
 
+/* Linux 5.4 signatures (no idmapped mounts): see ntfs_fs.h. */
+static int ntfs_create_54(struct inode *dir, struct dentry *dentry,
+			  umode_t mode, bool excl)
+{
+	return ntfs_create(&init_user_ns, dir, dentry, mode, excl);
+}
+
+static int ntfs_mknod_54(struct inode *dir, struct dentry *dentry,
+			 umode_t mode, dev_t rdev)
+{
+	return ntfs_mknod(&init_user_ns, dir, dentry, mode, rdev);
+}
+
+static int ntfs_symlink_54(struct inode *dir, struct dentry *dentry,
+			   const char *symname)
+{
+	return ntfs_symlink(&init_user_ns, dir, dentry, symname);
+}
+
+static int ntfs_mkdir_54(struct inode *dir, struct dentry *dentry,
+			 umode_t mode)
+{
+	return ntfs_mkdir(&init_user_ns, dir, dentry, mode);
+}
+
+static int ntfs_rename_54(struct inode *dir, struct dentry *dentry,
+			  struct inode *new_dir, struct dentry *new_dentry,
+			  unsigned int flags)
+{
+	return ntfs_rename(&init_user_ns, dir, dentry, new_dir, new_dentry,
+			   flags);
+}
+
 // clang-format off
 const struct inode_operations ntfs_dir_inode_operations = {
 	.lookup		= ntfs_lookup,
-	.create		= ntfs_create,
+	.create		= ntfs_create_54,
 	.link		= ntfs_link,
 	.unlink		= ntfs_unlink,
-	.symlink	= ntfs_symlink,
-	.mkdir		= ntfs_mkdir,
+	.symlink	= ntfs_symlink_54,
+	.mkdir		= ntfs_mkdir_54,
 	.rmdir		= ntfs_rmdir,
-	.mknod		= ntfs_mknod,
-	.rename		= ntfs_rename,
-	.permission	= ntfs_permission,
+	.mknod		= ntfs_mknod_54,
+	.rename		= ntfs_rename_54,
+	.permission	= ntfs_permission_54,
 	.get_acl	= ntfs_get_acl,
 	.set_acl	= ntfs_set_acl,
-	.setattr	= ntfs3_setattr,
-	.getattr	= ntfs_getattr,
+	.setattr	= ntfs3_setattr_54,
+	.getattr	= ntfs_getattr_54,
 	.listxattr	= ntfs_listxattr,
 	.fiemap		= ntfs_fiemap,
 };
 
 const struct inode_operations ntfs_special_inode_operations = {
-	.setattr	= ntfs3_setattr,
-	.getattr	= ntfs_getattr,
+	.setattr	= ntfs3_setattr_54,
+	.getattr	= ntfs_getattr_54,
 	.listxattr	= ntfs_listxattr,
 	.get_acl	= ntfs_get_acl,
 	.set_acl	= ntfs_set_acl,

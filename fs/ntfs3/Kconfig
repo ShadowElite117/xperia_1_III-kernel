@@ -34,7 +34,8 @@ config NTFS3_LZX_XPRESS
 
 config NTFS3_FS_POSIX_ACL
 	bool "NTFS POSIX Access Control Lists"
-	depends on NTFS3_FS
+	# Not ported to Linux 5.4 (get_acl/set_acl and the ACL xattr handlers)
+	depends on NTFS3_FS && BROKEN
 	select FS_POSIX_ACL
 	help
 	  POSIX Access Control Lists (ACLs) support additional access rights

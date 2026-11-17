@@ -30,7 +30,7 @@
 #include <linux/fs_context.h>
 #include <linux/fs_parser.h>
 #include <linux/log2.h>
-#include <linux/minmax.h>
+#include <linux/kernel.h> /* min/max: no linux/minmax.h on 5.4 */
 #include <linux/module.h>
 #include <linux/nls.h>
 #include <linux/seq_file.h>
@@ -250,6 +250,12 @@ static const struct fs_parameter_spec ntfs_fs_parameters[] = {
 	{}
 };
 
+/* Linux 5.4 fs_parse() and file_system_type take a parameter description. */
+static const struct fs_parameter_description ntfs_fs_parameters_54 = {
+	.name	= "ntfs3",
+	.specs	= ntfs_fs_parameters,
+};
+
 /*
  * Load nls table or if @nls is utf8 then return NULL.
  */
@@ -280,7 +286,7 @@ static int ntfs_fs_parse_param(struct fs_context *fc,
 	struct fs_parse_result result;
 	int opt;
 
-	opt = fs_parse(fc, ntfs_fs_parameters, param, &result);
+	opt = fs_parse(fc, &ntfs_fs_parameters_54, param, &result);
 	if (opt < 0)
 		return opt;
 
@@ -1443,7 +1449,7 @@ static struct file_system_type ntfs_fs_type = {
 	.owner			= THIS_MODULE,
 	.name			= "ntfs3",
 	.init_fs_context	= ntfs_init_fs_context,
-	.parameters		= ntfs_fs_parameters,
+	.parameters		= &ntfs_fs_parameters_54,
 	.kill_sb		= kill_block_super,
 	.fs_flags		= FS_REQUIRES_DEV | FS_ALLOW_IDMAP,
 };

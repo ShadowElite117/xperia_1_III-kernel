@@ -29,6 +29,7 @@
 #include <asm/div64.h>
 #include <asm/page.h>
 
+#include "compat54.h"
 #include "debug.h"
 #include "ntfs.h"
 
@@ -1126,6 +1127,27 @@ static inline int attr_load_runs_attr(struct ntfs_inode *ni,
 static inline void le64_sub_cpu(__le64 *var, u64 val)
 {
 	*var = cpu_to_le64(le64_to_cpu(*var) - val);
+}
+
+/*
+ * Linux 5.4: inode_operations take no struct user_namespace (idmapped mounts
+ * came in 5.12). These wrappers give the 5.4 signatures to the operation
+ * tables and pass the initial namespace to the 5.15 implementations.
+ */
+static inline int ntfs_getattr_54(const struct path *path, struct kstat *stat,
+				  u32 request_mask, unsigned int flags)
+{
+	return ntfs_getattr(&init_user_ns, path, stat, request_mask, flags);
+}
+
+static inline int ntfs3_setattr_54(struct dentry *dentry, struct iattr *attr)
+{
+	return ntfs3_setattr(&init_user_ns, dentry, attr);
+}
+
+static inline int ntfs_permission_54(struct inode *inode, int mask)
+{
+	return ntfs_permission(&init_user_ns, inode, mask);
 }
 
 #endif /* _LINUX_NTFS3_NTFS_FS_H */
