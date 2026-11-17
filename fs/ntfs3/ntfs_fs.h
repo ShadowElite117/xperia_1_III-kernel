@@ -104,6 +104,12 @@ struct ntfs_mount_options {
 	unsigned force : 1; /* RW mount dirty volume. */
 	unsigned noacsrules : 1; /* Exclude acs rules. */
 	unsigned prealloc : 1; /* Preallocate space when file is growing. */
+	/*
+	 * uid= or gid= was set: own every inode by fs_uid/fs_gid with the
+	 * fmask/dmask permissions, like vfat/exfat (what Android's vold
+	 * expects of removable media).
+	 */
+	unsigned fixed_owner : 1;
 };
 
 /* Special value to unpack and deallocate. */

@@ -371,7 +371,8 @@ next_attr:
 			 * ntfs_get_wsl_perm updates inode->i_uid, inode->i_gid, inode->i_mode
 			 */
 			inode->i_mode = mode;
-			ntfs_get_wsl_perm(inode);
+			if (!sbi->options->fixed_owner)
+				ntfs_get_wsl_perm(inode);
 			mode = inode->i_mode;
 		}
 		goto next_attr;
@@ -1326,6 +1327,16 @@ struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
 	}
 	inode = &ni->vfs_inode;
 	inode_init_owner(mnt_userns, inode, dir, mode);
+	if (sbi->options->fixed_owner) {
+		inode->i_uid = sbi->options->fs_uid;
+		inode->i_gid = sbi->options->fs_gid;
+		if (S_ISDIR(mode))
+			inode->i_mode = S_IFDIR |
+					(0777 & sbi->options->fs_dmask_inv);
+		else if (S_ISREG(mode))
+			inode->i_mode = S_IFREG |
+					(0777 & sbi->options->fs_fmask_inv);
+	}
 	mode = inode->i_mode;
 
 	inode->i_atime = inode->i_mtime = inode->i_ctime = ni->i_crtime =

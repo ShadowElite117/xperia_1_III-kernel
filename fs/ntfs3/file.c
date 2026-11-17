@@ -752,6 +752,10 @@ int ntfs3_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
 		/* and disable for editing some attributes. */
 		attr->ia_valid &= ~(ATTR_UID | ATTR_GID | ATTR_MODE);
 		ia_valid = attr->ia_valid;
+	} else if (sbi->options->fixed_owner) {
+		/* Owner and permissions come from the mount options. */
+		attr->ia_valid &= ~(ATTR_UID | ATTR_GID | ATTR_MODE);
+		ia_valid = attr->ia_valid;
 	}
 
 	err = setattr_prepare(mnt_userns, dentry, attr);
