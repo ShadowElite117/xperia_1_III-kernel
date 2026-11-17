@@ -142,6 +142,8 @@ enum {
 	Opt_checkpoint_disable_cap,
 	Opt_checkpoint_disable_cap_perc,
 	Opt_checkpoint_enable,
+	Opt_checkpoint_merge,
+	Opt_nocheckpoint_merge,
 	Opt_compress_algorithm,
 	Opt_compress_log_size,
 	Opt_compress_extension,
@@ -209,6 +211,8 @@ static match_table_t f2fs_tokens = {
 	{Opt_checkpoint_disable_cap, "checkpoint=disable:%u"},
 	{Opt_checkpoint_disable_cap_perc, "checkpoint=disable:%u%%"},
 	{Opt_checkpoint_enable, "checkpoint=enable"},
+	{Opt_checkpoint_merge, "checkpoint_merge"},
+	{Opt_nocheckpoint_merge, "nocheckpoint_merge"},
 	{Opt_compress_algorithm, "compress_algorithm=%s"},
 	{Opt_compress_log_size, "compress_log_size=%u"},
 	{Opt_compress_extension, "compress_extension=%s"},
@@ -901,6 +905,12 @@ static int parse_options(struct super_block *sb, char *options, bool is_remount)
 		case Opt_checkpoint_enable:
 			clear_opt(sbi, DISABLE_CHECKPOINT);
 			break;
+		case Opt_checkpoint_merge:
+			set_opt(sbi, MERGE_CHECKPOINT);
+			break;
+		case Opt_nocheckpoint_merge:
+			clear_opt(sbi, MERGE_CHECKPOINT);
+			break;
 		case Opt_compress_algorithm:
 			if (!f2fs_sb_has_compression(sbi)) {
 				f2fs_err(sbi, "Compression feature if off");
@@ -1237,6 +1247,12 @@ static void f2fs_put_super(struct super_block *sb)
 	mutex_lock(&sbi->umount_mutex);
 
 	/*
+	 * flush all issued checkpoints and stop checkpoint issue thread.
+	 * after then, all checkpoints should be done by each process context.
+	 */
+	f2fs_stop_ckpt_thread(sbi);
+
+	/*
 	 * We don't need to do checkpoint when superblock is clean.
 	 * But, the previous checkpoint was not done by umount, it needs to do
 	 * clean checkpoint again.
@@ -1336,15 +1352,9 @@ int f2fs_sync_fs(struct super_block *sb, int sync)
 	if (unlikely(is_sbi_flag_set(sbi, SBI_POR_DOING)))
 		return -EAGAIN;
 
-	if (sync) {
-		struct cp_control cpc;
+	if (sync)
+		err = f2fs_issue_checkpoint(sbi);
 
-		cpc.reason = __get_cp_reason(sbi);
-
-		down_write(&sbi->gc_lock);
-		err = f2fs_write_checkpoint(sbi, &cpc);
-		up_write(&sbi->gc_lock);
-	}
 	f2fs_trace_ios(NULL, 1);
 
 	return err;
@@ -1362,6 +1372,9 @@ static int f2fs_freeze(struct super_block *sb)
 	/* must be clean, since sync_filesystem() was already called */
 	if (is_sbi_flag_set(F2FS_SB(sb), SBI_IS_DIRTY))
 		return -EINVAL;
+
+	/* Let's flush checkpoints and stop the thread. */
+	f2fs_flush_ckpt_thread(F2FS_SB(sb));
 	return 0;
 }
 
@@ -1662,6 +1675,10 @@ static int f2fs_show_options(struct seq_file *seq, struct dentry *root)
 	if (test_opt(sbi, DISABLE_CHECKPOINT))
 		seq_printf(seq, ",checkpoint=disable:%u",
 				F2FS_OPTION(sbi).unusable_cap);
+	if (test_opt(sbi, MERGE_CHECKPOINT))
+		seq_puts(seq, ",checkpoint_merge");
+	else
+		seq_puts(seq, ",nocheckpoint_merge");
 	if (F2FS_OPTION(sbi).fsync_mode == FSYNC_MODE_POSIX)
 		seq_printf(seq, ",fsync_mode=%s", "posix");
 	else if (F2FS_OPTION(sbi).fsync_mode == FSYNC_MODE_STRICT)
@@ -1701,6 +1718,7 @@ static void default_options(struct f2fs_sb_info *sbi)
 	set_opt(sbi, EXTENT_CACHE);
 	set_opt(sbi, NOHEAP);
 	clear_opt(sbi, DISABLE_CHECKPOINT);
+	set_opt(sbi, MERGE_CHECKPOINT);
 	F2FS_OPTION(sbi).unusable_cap = 0;
 	sbi->sb->s_flags |= SB_LAZYTIME;
 	set_opt(sbi, FLUSH_MERGE);
@@ -1803,6 +1821,9 @@ static void f2fs_enable_checkpoint(struct f2fs_sb_info *sbi)
 	up_write(&sbi->gc_lock);
 
 	f2fs_sync_fs(sbi->sb, 1);
+
+	/* Let's ensure there's no pending checkpoint anymore */
+	f2fs_flush_ckpt_thread(sbi);
 }
 
 static int f2fs_remount(struct super_block *sb, int *flags, char *data)
@@ -1811,8 +1832,9 @@ static int f2fs_remount(struct super_block *sb, int *flags, char *data)
 	struct f2fs_mount_info org_mount_opt;
 	unsigned long old_sb_flags;
 	int err;
-	bool need_restart_gc = false;
-	bool need_stop_gc = false;
+	bool need_restart_gc = false, need_stop_gc = false;
+	bool need_restart_ckpt = false, need_stop_ckpt = false;
+	bool need_restart_flush = false, need_stop_flush = false;
 	bool no_extent_cache = !test_opt(sbi, EXTENT_CACHE);
 	bool disable_checkpoint = test_opt(sbi, DISABLE_CHECKPOINT);
 	bool no_io_align = !F2FS_IO_ALIGNED(sbi);
@@ -1941,14 +1963,22 @@ static int f2fs_remount(struct super_block *sb, int *flags, char *data)
 		clear_sbi_flag(sbi, SBI_IS_CLOSE);
 	}
 
-	if (checkpoint_changed) {
-		if (test_opt(sbi, DISABLE_CHECKPOINT)) {
-			err = f2fs_disable_checkpoint(sbi);
-			if (err)
-				goto restore_gc;
-		} else {
-			f2fs_enable_checkpoint(sbi);
+	if ((*flags & SB_RDONLY) || test_opt(sbi, DISABLE_CHECKPOINT) ||
+			!test_opt(sbi, MERGE_CHECKPOINT)) {
+		f2fs_stop_ckpt_thread(sbi);
+		need_restart_ckpt = true;
+	} else {
+		/* Flush if the prevous checkpoint, if exists. */
+		f2fs_flush_ckpt_thread(sbi);
+
+		err = f2fs_start_ckpt_thread(sbi);
+		if (err) {
+			f2fs_err(sbi,
+			    "Failed to start F2FS issue_checkpoint_thread (%d)",
+			    err);
+			goto restore_gc;
 		}
+		need_stop_ckpt = true;
 	}
 
 	/*
@@ -1958,11 +1988,24 @@ static int f2fs_remount(struct super_block *sb, int *flags, char *data)
 	if ((*flags & SB_RDONLY) || !test_opt(sbi, FLUSH_MERGE)) {
 		clear_opt(sbi, FLUSH_MERGE);
 		f2fs_destroy_flush_cmd_control(sbi, false);
+		need_restart_flush = true;
 	} else {
 		err = f2fs_create_flush_cmd_control(sbi);
 		if (err)
-			goto restore_gc;
+			goto restore_ckpt;
+		need_stop_flush = true;
 	}
+
+	if (checkpoint_changed) {
+		if (test_opt(sbi, DISABLE_CHECKPOINT)) {
+			err = f2fs_disable_checkpoint(sbi);
+			if (err)
+				goto restore_flush;
+		} else {
+			f2fs_enable_checkpoint(sbi);
+		}
+	}
+
 skip:
 #ifdef CONFIG_QUOTA
 	/* Release old quota file names */
@@ -1977,6 +2020,21 @@ skip:
 	adjust_unusable_cap_perc(sbi);
 	*flags = (*flags & ~SB_LAZYTIME) | (sb->s_flags & SB_LAZYTIME);
 	return 0;
+restore_flush:
+	if (need_restart_flush) {
+		if (f2fs_create_flush_cmd_control(sbi))
+			f2fs_warn(sbi, "background flush thread has stopped");
+	} else if (need_stop_flush) {
+		clear_opt(sbi, FLUSH_MERGE);
+		f2fs_destroy_flush_cmd_control(sbi, false);
+	}
+restore_ckpt:
+	if (need_restart_ckpt) {
+		if (f2fs_start_ckpt_thread(sbi))
+			f2fs_warn(sbi, "background ckpt thread has stopped");
+	} else if (need_stop_ckpt) {
+		f2fs_stop_ckpt_thread(sbi);
+	}
 restore_gc:
 	if (need_restart_gc) {
 		if (f2fs_start_gc_thread(sbi))
@@ -3702,6 +3760,19 @@ try_onemore:
 
 	f2fs_init_fsync_node_info(sbi);
 
+	/* setup checkpoint request control and start checkpoint issue thread */
+	f2fs_init_ckpt_req_control(sbi);
+	if (!f2fs_readonly(sb) && !test_opt(sbi, DISABLE_CHECKPOINT) &&
+			test_opt(sbi, MERGE_CHECKPOINT)) {
+		err = f2fs_start_ckpt_thread(sbi);
+		if (err) {
+			f2fs_err(sbi,
+			    "Failed to start F2FS issue_checkpoint_thread (%d)",
+			    err);
+			goto stop_ckpt_thread;
+		}
+	}
+
 	/* setup f2fs internal modules */
 	err = f2fs_build_segment_manager(sbi);
 	if (err) {
@@ -3918,6 +3989,8 @@ free_nm:
 free_sm:
 	f2fs_destroy_segment_manager(sbi);
 	f2fs_destroy_post_read_wq(sbi);
+stop_ckpt_thread:
+	f2fs_stop_ckpt_thread(sbi);
 free_devices:
 	destroy_device_list(sbi);
 	kvfree(sbi->ckpt);

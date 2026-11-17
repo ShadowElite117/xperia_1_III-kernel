@@ -606,8 +606,6 @@ repeat:
 	if (kthread_should_stop())
 		return 0;
 
-	sb_start_intwrite(sbi->sb);
-
 	if (!llist_empty(&fcc->issue_list)) {
 		struct flush_cmd *cmd, *next;
 		int ret;
@@ -627,8 +625,6 @@ repeat:
 		}
 		fcc->dispatch_list = NULL;
 	}
-
-	sb_end_intwrite(sbi->sb);
 
 	wait_event_interruptible(*q,
 		kthread_should_stop() || !llist_empty(&fcc->issue_list));
@@ -666,7 +662,11 @@ int f2fs_issue_flush(struct f2fs_sb_info *sbi, nid_t ino)
 
 	llist_add(&cmd.llnode, &fcc->issue_list);
 
-	/* update issue_list before we wake up issue_flush thread */
+	/*
+	 * update issue_list before we wake up issue_flush thread, this
+	 * smp_mb() pairs with another barrier in ___wait_event(), see
+	 * more details in comments of waitqueue_active().
+	 */
 	smp_mb();
 
 	if (waitqueue_active(&fcc->flush_wait_queue))
