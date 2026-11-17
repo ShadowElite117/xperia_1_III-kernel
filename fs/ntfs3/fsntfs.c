@@ -9,10 +9,14 @@
 #include <linux/buffer_head.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
+#include <linux/workqueue.h>
 
 #include "debug.h"
 #include "ntfs.h"
 #include "ntfs_fs.h"
+
+/* Delay before a dirty volume is synced and marked clean again. */
+#define NTFS_CLEAN_DELAY (5 * HZ)
 
 // clang-format off
 const struct cpu_str NAME_MFT = {
@@ -961,7 +965,38 @@ out:
 	/* write mft record on disk. */
 	err = _ni_write_inode(&ni->vfs_inode, 1);
 
+	if (!err && dirty == NTFS_DIRTY_DIRTY)
+		queue_delayed_work(system_long_wq, &sbi->clean_work,
+				   NTFS_CLEAN_DELAY);
+
 	return err;
+}
+
+/*
+ * ntfs_clean_work - Sync a volume that was marked dirty.
+ *
+ * ntfs_sync_fs() clears the dirty flag once everything is on disk, but
+ * nothing calls it while the volume stays mounted, so a removable volume
+ * pulled out without unmounting was always left dirty and could only be
+ * mounted read-only again. Sync it shortly after it becomes dirty instead
+ * (Windows does the same for removable media). Further changes mark it
+ * dirty, and queue this again. If the superblock is busy (unmount,
+ * remount), skip: those paths sync and clear the flag themselves.
+ */
+void ntfs_clean_work(struct work_struct *work)
+{
+	struct ntfs_sb_info *sbi =
+		container_of(to_delayed_work(work), struct ntfs_sb_info,
+			     clean_work);
+	struct super_block *sb = sbi->sb;
+
+	if (!sb || !down_read_trylock(&sb->s_umount))
+		return;
+
+	if (sb->s_root && !sb_rdonly(sb))
+		sync_filesystem(sb);
+
+	up_read(&sb->s_umount);
 }
 
 /*

@@ -454,6 +454,7 @@ static void init_once(void *foo)
  */
 static noinline void put_ntfs(struct ntfs_sb_info *sbi)
 {
+	cancel_delayed_work_sync(&sbi->clean_work);
 	kfree(sbi->new_rec);
 	kvfree(ntfs_put_shared(sbi->upcase));
 	kvfree(sbi->def_table);
@@ -1433,6 +1434,7 @@ static int ntfs_init_fs_context(struct fs_context *fc)
 
 	ratelimit_state_init(&sbi->msg_ratelimit, DEFAULT_RATELIMIT_INTERVAL,
 			     DEFAULT_RATELIMIT_BURST);
+	INIT_DELAYED_WORK(&sbi->clean_work, ntfs_clean_work);
 
 	mutex_init(&sbi->compress.mtx_lznt);
 #ifdef CONFIG_NTFS3_LZX_XPRESS

@@ -319,6 +319,13 @@ struct ntfs_sb_info {
 
 	struct ntfs_mount_options *options;
 	struct ratelimit_state msg_ratelimit;
+
+	/*
+	 * Syncs the volume a few seconds after it was marked dirty, which
+	 * clears the dirty flag again (see ntfs_sync_fs): a volume removed
+	 * without unmounting is only left dirty if it was being written to.
+	 */
+	struct delayed_work clean_work;
 };
 
 /* One MFT record(usually 1024 bytes), consists of attributes. */
@@ -613,6 +620,7 @@ enum NTFS_DIRTY_FLAGS {
 	NTFS_DIRTY_ERROR = 2,
 };
 int ntfs_set_state(struct ntfs_sb_info *sbi, enum NTFS_DIRTY_FLAGS dirty);
+void ntfs_clean_work(struct work_struct *work);
 int ntfs_sb_read(struct super_block *sb, u64 lbo, size_t bytes, void *buffer);
 int ntfs_sb_write(struct super_block *sb, u64 lbo, size_t bytes,
 		  const void *buffer, int wait);
