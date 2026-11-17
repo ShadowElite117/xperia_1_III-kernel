@@ -228,6 +228,7 @@ enum Opt {
 	Opt_iocharset,
 	Opt_prealloc,
 	Opt_noacsrules,
+	Opt_utf8,
 	Opt_err,
 };
 
@@ -247,6 +248,8 @@ static const struct fs_parameter_spec ntfs_fs_parameters[] = {
 	fsparam_flag_no("prealloc",		Opt_prealloc),
 	fsparam_flag_no("acsrules",		Opt_noacsrules),
 	fsparam_string("iocharset",		Opt_iocharset),
+	/* Accepted for exFAT/FAT-style callers such as vold; utf8 is the default. */
+	fsparam_flag("utf8",			Opt_utf8),
 	{}
 };
 
@@ -357,6 +360,8 @@ static int ntfs_fs_parse_param(struct fs_context *fc,
 		kfree(opts->nls_name);
 		opts->nls_name = param->string;
 		param->string = NULL;
+		break;
+	case Opt_utf8:
 		break;
 	case Opt_prealloc:
 		opts->prealloc = result.negated ? 0 : 1;
