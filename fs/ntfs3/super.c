@@ -263,10 +263,12 @@ static struct nls_table *ntfs_load_nls(char *nls)
 {
 	struct nls_table *ret;
 
-	if (!nls)
-		nls = CONFIG_NLS_DEFAULT;
-
-	if (strcmp(nls, "utf8") == 0)
+	/*
+	 * Android is UTF-8 throughout and NTFS names are UTF-16, so default to
+	 * utf8 (lossless) instead of CONFIG_NLS_DEFAULT (iso8859-1 here), which
+	 * mangles non-ASCII names and hides those it cannot represent.
+	 */
+	if (!nls || strcmp(nls, "utf8") == 0)
 		return NULL;
 
 	if (strcmp(nls, CONFIG_NLS_DEFAULT) == 0)
