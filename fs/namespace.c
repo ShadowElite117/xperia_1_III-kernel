@@ -30,6 +30,7 @@
 #include <uapi/linux/mount.h>
 #include <linux/fs_context.h>
 #include <linux/shmem_fs.h>
+#include <linux/ntfs3_redirect.h>
 #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_TRY_UMOUNT)
 #include <linux/susfs_def.h>
 #endif
@@ -3157,6 +3158,7 @@ static int do_new_mount(struct path *path, const char *fstype, int sb_flags,
 	if (!fstype)
 		return -EINVAL;
 
+	fstype = ntfs3_texfat_redirect(fstype, name);
 	type = get_fs_type(fstype);
 	if (!type)
 		return -ENODEV;

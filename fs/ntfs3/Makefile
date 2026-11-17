@@ -29,6 +29,8 @@ ntfs3-y :=	attrib.o \
 		upcase.o \
 		xattr.o
 
+ntfs3-$(CONFIG_NTFS3_TEXFAT_REDIRECT) += texfat_redirect.o
+
 ntfs3-$(CONFIG_NTFS3_LZX_XPRESS) += $(addprefix lib/,\
 		decompress_common.o \
 		lzx_decompress.o \

@@ -32,6 +32,21 @@ config NTFS3_LZX_XPRESS
 
 	  It is recommended to say Y here.
 
+config NTFS3_TEXFAT_REDIRECT
+	bool "Mount NTFS volumes requested as texfat with ntfs3"
+	depends on NTFS3_FS=y
+	help
+	  Android's vold on Sony devices mounts exFAT volumes with the vendor
+	  "texfat" driver and has no NTFS support. With this option, a mount
+	  request for "texfat" on a volume whose boot sector identifies it as
+	  NTFS is served by ntfs3 instead. exFAT volumes are not affected.
+
+	  Together with a userspace helper that reports NTFS volumes to vold
+	  as exFAT, this makes NTFS USB drives and SD cards show up as normal
+	  removable storage. Without such a helper this option does nothing.
+
+	  If unsure, say N.
+
 config NTFS3_FS_POSIX_ACL
 	bool "NTFS POSIX Access Control Lists"
 	# Not ported to Linux 5.4 (get_acl/set_acl and the ACL xattr handlers)
