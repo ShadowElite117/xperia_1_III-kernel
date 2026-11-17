@@ -198,6 +198,17 @@ static int apply_kernelsu_rules_fn(void *ptr)
     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "getpgid");
     ksu_allow(db, "system_server", KERNEL_SU_DOMAIN, "process", "sigkill");
 
+#ifdef CONFIG_NTFS3_FS
+    /*
+     * Android's policy has no label for ntfs3, so its files would be
+     * unlabeled and nothing could create files on it, nor could vold mount
+     * it. Label it like vold's FAT and exFAT mounts. This lives here because
+     * ksud cannot parse genfscon rules from a module's sepolicy.rule.
+     */
+    if (!ksu_genfscon(db, "ntfs3", "/", "u:object_r:vfat:s0"))
+        pr_warn("genfscon for ntfs3 failed\n");
+#endif
+
     return 0;
 }
 
